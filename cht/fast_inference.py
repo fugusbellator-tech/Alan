@@ -58,7 +58,7 @@ class FastInferenceOptimizer:
         except Exception:
             pass  # Pruning is optional
     
-    def fast_generate(self, prompt: str, max_tokens: int = 40) -> str:
+    def fast_generate(self, prompt: str, max_tokens: int = 780) -> str:
         """
         Generate response using streaming generation (token-by-token).
         This avoids hanging on buffered inference.
@@ -81,7 +81,7 @@ class FastInferenceOptimizer:
                 # Generate one token at a time to allow interruption
                 input_ids = inputs.input_ids
                 
-                for i in range(min(max_tokens, 5)):  # Ultra-conservative limit
+                for i in range(max_tokens):  # Full token generation enabled
                     # Forward pass only
                     outputs = self.model(input_ids=input_ids, return_dict=True)
                     logits = outputs.logits[0, -1, :]

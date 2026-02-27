@@ -2,7 +2,7 @@
 Alan Chat Interface
 A comprehensive chat system with the Alan model (GPT-2) using Chain of Thought reasoning.
 All models are loaded locally for optimal performance.
-Includes meta-learning abilities and code execution capabilities.
+Includes meta-learning abilities, code execution, and autonomous agent capabilities.
 """
 
 import os
@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools'))
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from chain_of_thought import ChainOfThought
 from .fast_inference import FastInferenceOptimizer
+from agent import AutonomousAgent
 
 # Import Alan's tools
 try:
@@ -36,14 +37,14 @@ class AlanChat:
     Uses locally loaded GPT-2 models for fast inference.
     """
     
-    def __init__(self, model_path: str = "models/gpt-neo-1.3b", use_cot: bool = False, 
+    def __init__(self, model_path: str = "models/gpt-neo-1.3b", use_cot: bool = True, 
                  use_gpu: bool = False):
         """
         Initialize the Alan chat system.
         
         Args:
             model_path: Path to the pre-trained model
-            use_cot: Whether to use Chain of Thought reasoning
+            use_cot: Whether to use Chain of Thought reasoning (default: True)
             use_gpu: Whether to use GPU if available
         """
         # normalize path in case a relative path is provided
@@ -101,7 +102,7 @@ class AlanChat:
 
         # Initialize chain of thought reasoning
         if self.use_cot:
-            self.cot = ChainOfThought(self.model, self.tokenizer, max_reasoning_steps=1)
+            self.cot = ChainOfThought(self.model, self.tokenizer, max_reasoning_steps=5)
         
         # Initialize fast inference optimizer with smart caching
         self.fast_inference = FastInferenceOptimizer(self.model, self.tokenizer, cache_size=256)
@@ -123,6 +124,16 @@ class AlanChat:
             self.tools_enabled = False
             self.network = None
         
+        # Initialize Autonomous Agent with sophisticated capabilities
+        try:
+            self.agent = AutonomousAgent(self.model, self.tokenizer, chat_interface=self)
+            self.agent.enable_autonomy(True)
+            self.agent.enable_internet(True)
+            print("✓ Autonomous Agent: ENABLED (Planning, Learning, Feedback Loop)")
+        except Exception as e:
+            self.agent = None
+            print(f"⚠ Autonomous Agent: Could not initialize ({str(e)[:30]}...)")
+        
         # Chat history
         self.chat_history = []
         self.conversation_context = ""
@@ -132,7 +143,12 @@ class AlanChat:
         
         print("Alan is ready! Type 'exit' to quit, 'clear' to clear history,")
         print("'reasoning' to toggle chain of thought, 'history' to view chat history,")
-        print("'tools' to see tools status, 'exec <code>' to execute code, or 'help' for more.\n")
+        print("'tools' to see tools & reasoning status, 'exec <code>' to execute code, or 'help' for more.")
+        if self.use_cot:
+            print("\n✓ Chain of Thought Reasoning: ENABLED")
+            print("✓ Tool Integration: Code Execution & Meta-Learning ENABLED\n")
+        else:
+            print("\n✗ Chain of Thought Reasoning: DISABLED (use 'reasoning' to enable)\n")
     
     def _build_context(self) -> str:
         """Build conversation context from history."""
@@ -164,10 +180,10 @@ class AlanChat:
             full_prompt = f"{context}User: {user_input}\nAlan:"
             
             if use_reasoning:
-                print("\n[Processing with Chain of Thought...]")
+                print("\n[Processing with Chain of Thought + Tools + Reasoning...]")
                 reasoning_steps, response = self.cot.generate_with_reasoning(
                     user_input, 
-                    max_length=80
+                    max_length=780
                 )
                 
                 # Display reasoning
@@ -176,7 +192,7 @@ class AlanChat:
             else:
                 # Direct generation without reasoning - ULTRA-fast path with caching
                 print("\n[Processing (ultra-fast mode with caching)...]")
-                response = self.fast_inference.fast_generate(user_input, max_tokens=40)
+                response = self.fast_inference.fast_generate(user_input, max_tokens=780)
                 return response
         
         except Exception as e:
@@ -245,6 +261,23 @@ class AlanChat:
                     self.display_help()
                     continue
                 
+                elif user_input.lower() == 'agent':
+                    if self.agent:
+                        self.agent.display_status()
+                    else:
+                        print("Autonomous agent not available.")
+                    continue
+                
+                elif user_input.lower().startswith('pursue '):
+                    if self.agent and self.agent.autonomy_enabled:
+                        goal = user_input[7:].strip()
+                        print(f"\nStarting autonomous goal pursuit: {goal}")
+                        result = self.agent.pursue_goal(goal)
+                        print(f"\nResult:\n{result['output']}")
+                    else:
+                        print("Agent autonomy not enabled.")
+                    continue
+                
                 # Generate response
                 response = self.generate_response(user_input)
                 print(f"\nAlan: {response}")
@@ -307,23 +340,32 @@ class AlanChat:
         print("ALAN CHAT HELP")
         print("="*60)
         print("Commands:")
-        print("  exit        - Exit the chat")
-        print("  clear       - Clear chat history")
-        print("  reasoning   - Toggle Chain of Thought reasoning")
-        print("  history     - View chat history")
-        print("  tools       - Show tools status (meta-learning, code exec)")
-        print("  exec <code> - Execute Python code")
+        print("  exit          - Exit the chat")
+        print("  clear         - Clear chat history")
+        print("  reasoning     - Toggle Chain of Thought reasoning (default: enabled)")
+        print("  history       - View chat history")
+        print("  tools         - Show tools status (meta-learning, code exec, reasoning)")
+        print("  exec <code>   - Execute Python code")
         print("  improve <desc> - Suggest improvement to Alan")
-        print("  help        - Display this help message")
-        print("\nFeatures:")
-        print("  - Chain of Thought reasoning for complex problems")
-        print("  - Conversation context awareness")
-        print("  - Meta-learning abilities (source code modification)")
-        print("  - Python code execution engine")
-        print("  - Autonomy mode: Alan can interpret his own responses and execute actions")
-        print('  - Network fetch command ("fetch <url>") once internet is granted')
-        print("  - Local model inference (no external API calls)")
-        print("  - Chat history saving")
+        print("  agent         - Show agent status & capabilities")
+        print("  pursue <goal> - Autonomous goal pursuit (planning, execution, learning)")
+        print("  help          - Display this help message")
+        print("\nCore Features:")
+        print("  ✓ Chain of Thought Reasoning (up to 5 steps)")
+        print("  ✓ Extended Token Generation (up to 780 tokens)")
+        print("  ✓ Python Code Execution during reasoning")
+        print("  ✓ Meta-learning & self-modification")
+        print("  ✓ Conversation context awareness")
+        print("  ✓ Response caching for optimization")
+        print("  ✓ Local model inference (no external APIs)")
+        print("  ✓ Chat history persistence")
+        print("\nAutonomous Agent Features (NEW):")
+        print("  ✓ Sophisticated goal decomposition")
+        print("  ✓ Adaptive execution planning")
+        print("  ✓ Comprehensive adaptive learning")
+        print("  ✓ Dynamic iteration with fallbacks")
+        print("  ✓ Real-time feedback loop")
+        print("  ✓ Persistent experience database")
         print("="*60 + "\n")
     
     def execute_user_code(self, code: str):

@@ -16,6 +16,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools'))
 try:
     from abilities import AlanAbilities
     from python_executor import PythonExecutor
+    from learning import AdaptiveLearningSystem
+    from feedback_system import FeedbackLoopManager
     TOOLS_AVAILABLE = True
 except ImportError:
     TOOLS_AVAILABLE = False
@@ -59,10 +61,14 @@ class ChainOfThought:
         if TOOLS_AVAILABLE:
             self.abilities = AlanAbilities()
             self.executor = PythonExecutor()
+            self.learning_system = AdaptiveLearningSystem()
+            self.feedback_manager = FeedbackLoopManager(self.learning_system)
             self.tools_enabled = True
         else:
             self.abilities = None
             self.executor = None
+            self.learning_system = None
+            self.feedback_manager = None
             self.tools_enabled = False
         
         # Parallel executor for reasoning steps
@@ -97,35 +103,51 @@ class ChainOfThought:
 
     def generate_reasoning_steps(self, prompt: str) -> List[str]:
         """
-        Generate a single ultra-fast reasoning insight (no sequential loops).
-        Single-pass for 4-5x speedup over multi-step generation.
+        Generate reasoning insights using tools and capabilities.
+        Leverages code execution and meta-learning abilities.
         
         Args:
             prompt: The input prompt to reason about
             
         Returns:
-            List with single reasoning step
+            List with reasoning steps and tool results
         """
         reasoning_steps = []
         
-        # Single ultra-fast reasoning pass - no loops, no futures
+        # Generate initial reasoning insight
         analysis_prompt = f"Reasoning: {prompt}\nInsight:"
-        step_reasoning = self._generate_step_response(analysis_prompt, max_length=40, use_beams=False)
+        step_reasoning = self._generate_step_response(analysis_prompt, max_length=200, use_beams=False)
         if step_reasoning:
             reasoning_steps.append(f"Key Insight: {step_reasoning}")
+        
+        # Try to use tools if available
+        if self.tools_enabled:
+            # Check if code execution would help
+            if any(keyword in prompt.lower() for keyword in ['calculate', 'execute', 'code', 'python', 'function']):
+                code_analysis = f"Code needed for: {prompt}\nCode:"
+                suggested_code = self._generate_step_response(code_analysis, max_length=150, use_beams=False)
+                if suggested_code and suggested_code.strip():
+                    try:
+                        success, output = self.execute_python_code(suggested_code)
+                        if success:
+                            reasoning_steps.append(f"Code Execution Result: {output}")
+                    except Exception:
+                        pass  # Code execution failed gracefully
+            
+            # Check for actions to execute
             actions = self._parse_actions_from_text(step_reasoning)
-            if actions and self.tools_enabled and getattr(self.abilities, 'autonomy_enabled', False):
+            if actions and getattr(self.abilities, 'autonomy_enabled', False):
                 self.abilities.execute_action_plan(actions)
         
         return reasoning_steps
     
-    def _generate_step_response(self, prompt: str, max_length: int = 50, use_beams: bool = False) -> str:
+    def _generate_step_response(self, prompt: str, max_length: int = 200, use_beams: bool = False) -> str:
         """
         Generate a single step response with maximum speed optimizations.
         
         Args:
             prompt: The prompt for this step
-            max_length: Maximum length of the response (default 50 for speed)
+            max_length: Maximum length of the response (default 200 for quality)
             use_beams: Ignored (always uses greedy for speed)
             
         Returns:
@@ -211,13 +233,13 @@ class ChainOfThought:
         output += "="*60 + "\n"
         return output
     
-    def generate_with_reasoning(self, prompt: str, max_length: int = 80) -> Tuple[List[str], str]:
+    def generate_with_reasoning(self, prompt: str, max_length: int = 780) -> Tuple[List[str], str]:
         """
         Generate a response with ultra-fast single-step reasoning.
         
         Args:
             prompt: The input prompt
-            max_length: Maximum length of the final response (default 80)
+            max_length: Maximum length of the final response (default 780)
             
         Returns:
             Tuple of (reasoning_steps, final_response)

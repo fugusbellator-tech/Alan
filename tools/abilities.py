@@ -40,9 +40,9 @@ class AlanAbilities:
         self.modifications_log = self.backup_path / "modifications.json"
         self._initialize_log()
 
-        # Autonomy/network state
-        self.autonomy_enabled = False
-        self.internet_enabled = False
+        # Autonomy/network state - NOW ENABLED FOR AGENT MODE
+        self.autonomy_enabled = True
+        self.internet_enabled = True
     
     def _initialize_log(self):
         """Initialize the modifications log."""
